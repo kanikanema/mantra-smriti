@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sanskrit Memory</title>
+<style>
+:root{color-scheme:light dark}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#f7f5f1;color:#25231f}
+.card{width:min(92vw,420px);padding:28px;border:1px solid #ddd7cf;border-radius:18px;background:#fff;box-shadow:0 8px 28px rgba(0,0,0,.06)}
+h1{margin:0 0 8px;font-size:1.5rem}
+p{color:#706a63;margin:0 0 20px;line-height:1.5}
+label{display:block;font-weight:650;margin-bottom:7px}
+input{width:100%;font:inherit;font-size:16px;padding:12px 13px;border:1px solid #cfc8c0;border-radius:10px;background:#fff;color:#25231f}
+button{width:100%;margin-top:12px;min-height:46px;border:0;border-radius:10px;background:#67549a;color:white;font:inherit;font-weight:700;cursor:pointer}
+button:disabled{opacity:.55;cursor:wait}
+.status{min-height:22px;margin-top:12px;font-size:.9rem;color:#a13434}
+.small{font-size:.8rem;margin-top:18px;color:#8a837b}
+@media(prefers-color-scheme:dark){body{background:#181715;color:#eee}.card{background:#23211f;border-color:#393531}.card p,.small{color:#aaa29a}input{background:#181715;color:#eee;border-color:#514b45}}
+</style>
+</head>
+<body>
+<main class="card">
+  <h1>Sanskrit Memory</h1>
+  <p>Enter the shared access code to open the app.</p>
+  <form id="unlockForm">
+    <label for="code">Access code</label>
+    <input id="code" type="password" autocomplete="current-password" required autofocus>
+    <button id="unlockButton" type="submit">Open app</button>
+  </form>
+  <div id="status" class="status" role="alert" aria-live="polite"></div>
+  <div class="small">The access code is used only in this browser to decrypt the app.</div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+
+function b64bytes(s) {
+  const raw = atob(s);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+async function deriveKey(code, salt, iterations) {
+  const material = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(code), "PBKDF2", false, ["deriveKey"]
+  );
+  return crypto.subtle.deriveKey(
+    {name:"PBKDF2", hash:"SHA-256", salt, iterations},
+    material,
+    {name:"AES-GCM", length:256},
+    false,
+    ["decrypt"]
+  );
+}
+
+async function unlock(code) {
+  const response = await fetch("./app.enc", {cache:"no-store"});
+  if (!response.ok) throw new Error("Encrypted app could not be loaded.");
+  const p = await response.json();
+
+  if (p.version !== 1 || p.cipher !== "AES-256-GCM" || p.kdf !== "PBKDF2-SHA256") {
+    throw new Error("Unsupported encrypted app format.");
+  }
+
+  const key = await deriveKey(code, b64bytes(p.salt), p.iterations);
+  const plain = await crypto.subtle.decrypt(
+    {name:"AES-GCM", iv:b64bytes(p.iv)},
+    key,
+    b64bytes(p.ciphertext)
+  );
+  return new TextDecoder().decode(plain);
+}
+
+$("unlockForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const button = $("unlockButton");
+  const status = $("status");
+  const code = $("code").value;
+  status.textContent = "";
+  button.disabled = true;
+  button.textContent = "Opening…";
+  try {
+    const html = await unlock(code);
+    document.open();
+    document.write(html);
+    document.close();
+  } catch (err) {
+    console.error(err);
+    status.textContent = "Incorrect access code, or the encrypted app is unavailable.";
+    button.disabled = false;
+    button.textContent = "Open app";
+    $("code").select();
+  }
+});
+</script>
+</body>
+</html>
