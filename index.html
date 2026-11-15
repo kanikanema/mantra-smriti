@@ -83,9 +83,21 @@ $("unlockForm").addEventListener("submit", async e => {
   button.textContent = "Opening…";
   try {
     const html = await unlock(code);
-    document.open();
-    document.write(html);
-    document.close();
+    // Load the decrypted app as a same-origin srcdoc document.
+    // This reliably executes the app's embedded scripts while preserving
+    // access to this GitHub Pages origin's localStorage.
+    document.body.innerHTML = "";
+    document.body.style.margin = "0";
+    document.body.style.overflow = "hidden";
+
+    const frame = document.createElement("iframe");
+    frame.title = "Mantra Smriti";
+    frame.style.width = "100vw";
+    frame.style.height = "100vh";
+    frame.style.border = "0";
+    frame.style.display = "block";
+    frame.srcdoc = html;
+    document.body.appendChild(frame)
   } catch (err) {
     console.error(err);
     status.textContent = "Incorrect access code, or the encrypted app is unavailable.";
